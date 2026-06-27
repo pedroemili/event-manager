@@ -1,0 +1,63 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.user
+*.lock.json
+.vs/
+*.DotSettings.user
+
+## .NET Core build artifacts
+**/bin/
+**/obj/
+*.nupkg
+*.snupkg
+
+## ASP.NET Core
+appsettings.*.local.json
+secrets.json
+
+## Node / Frontend
+node_modules/
+dist/
+.cache/
+*.local
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Docker
+docker-compose.override.yml
+
+## Environment
+.env
+.env.*
+!.env.example
+
+## EF Core Migrations backup
+*.bak
+
+## Test Results
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Certificates
+*.pfx
+*.pem
+*.key
+!dev-cert.pem
