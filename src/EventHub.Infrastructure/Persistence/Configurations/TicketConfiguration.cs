@@ -26,6 +26,12 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.HasIndex(t => new { t.EventId, t.Status, t.CreatedAt });
         builder.HasIndex(t => new { t.EventId, t.Status });
 
+        builder.Property(t => t.CheckInMethod)
+            .HasMaxLength(50);
+
+        builder.Property(t => t.CheckInIpAddress)
+            .HasMaxLength(45);
+
         builder.HasOne(t => t.User)
             .WithMany(u => u.Tickets)
             .HasForeignKey(t => t.UserId)

@@ -9,9 +9,10 @@ public sealed class TicketReservation
     public Guid UserId { get; set; }
     public int Quantity { get; set; }
     public DateTime ExpiresAt { get; set; }
+    public string ReservationCode { get; set; } = string.Empty;
     public bool IsConfirmed { get; set; }
     public Guid? OrderId { get; set; }
-    public DateTime ConfirmedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ConfirmedAt { get; set; }
 
     public TicketType TicketType { get; set; } = null!;
     public User User { get; set; } = null!;

@@ -10,6 +10,9 @@ public sealed class EventStaffConfiguration : IEntityTypeConfiguration<EventStaf
     {
         builder.HasKey(es => es.Id);
 
+        builder.Property(es => es.StaffRole)
+            .HasMaxLength(50);
+
         builder.Property(es => es.Status)
             .HasMaxLength(10)
             .IsRequired()

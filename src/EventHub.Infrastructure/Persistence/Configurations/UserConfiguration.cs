@@ -30,6 +30,12 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.AvatarUrl)
             .HasMaxLength(512);
 
+        builder.Property(u => u.PhoneNumber)
+            .HasMaxLength(20);
+
+        builder.Property(u => u.Timezone)
+            .HasMaxLength(50);
+
         builder.HasIndex(u => u.Email)
             .IsUnique();
 
@@ -59,6 +65,11 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasMany(u => u.LoginAttempts)
             .WithOne(la => la.User)
             .HasForeignKey(la => la.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(u => u.EventFavorites)
+            .WithOne(ef => ef.User)
+            .HasForeignKey(ef => ef.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(u => u.NotificationPreference)

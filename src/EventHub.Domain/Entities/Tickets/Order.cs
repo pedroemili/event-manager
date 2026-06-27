@@ -11,9 +11,14 @@ public sealed class Order
     public string OrderNumber { get; set; } = string.Empty;
     public decimal SubtotalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
+    public decimal TaxAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public string Currency { get; set; } = "USD";
     public string Status { get; set; } = "Pending";
+    public string? PaymentMethod { get; set; }
+    public string? PaymentTransactionId { get; set; }
+    public string? PaymentStatus { get; set; }
+    public string? Notes { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

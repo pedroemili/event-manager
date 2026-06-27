@@ -16,6 +16,8 @@ public sealed class Ticket
     public string Status { get; set; } = "Active";
     public DateTime? CheckedInAt { get; set; }
     public Guid? CheckedInBy { get; set; }
+    public string? CheckInMethod { get; set; }
+    public string? CheckInIpAddress { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

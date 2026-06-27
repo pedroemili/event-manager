@@ -14,6 +14,10 @@ public sealed class OrderItemConfiguration : IEntityTypeConfiguration<OrderItem>
             .HasColumnType("decimal(10,2)")
             .IsRequired();
 
+        builder.Property(oi => oi.TicketTypeName)
+            .HasMaxLength(100)
+            .IsRequired();
+
         builder.Property(oi => oi.Subtotal)
             .HasColumnType("decimal(10,2)")
             .IsRequired();

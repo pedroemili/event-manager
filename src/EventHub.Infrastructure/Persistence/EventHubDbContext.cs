@@ -45,6 +45,7 @@ public sealed class EventHubDbContext : DbContext
 
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
+    public DbSet<InAppNotification> InAppNotifications => Set<InAppNotification>();
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<SystemLog> SystemLogs => Set<SystemLog>();

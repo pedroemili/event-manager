@@ -28,6 +28,8 @@ public sealed class TicketTypeConfiguration : IEntityTypeConfiguration<TicketTyp
             .IsRequired()
             .HasDefaultValue("Standard");
 
+        builder.ToTable(t => t.HasCheckConstraint("CK_TicketTypes_Type", "\"Type\" IN ('Standard', 'VIP', 'EarlyBird', 'Group')"));
+
         builder.HasIndex(tt => new { tt.EventId, tt.IsActive });
 
         builder.HasMany(tt => tt.OrderItems)

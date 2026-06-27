@@ -10,6 +10,12 @@ public sealed class TicketReservationConfiguration : IEntityTypeConfiguration<Ti
     {
         builder.HasKey(tr => tr.Id);
 
+        builder.Property(tr => tr.ReservationCode)
+            .HasMaxLength(20)
+            .IsRequired();
+
+        builder.HasIndex(tr => tr.ReservationCode).IsUnique();
+
         builder.HasIndex(tr => tr.ExpiresAt)
             .HasFilter("\"IsConfirmed\" = false");
 

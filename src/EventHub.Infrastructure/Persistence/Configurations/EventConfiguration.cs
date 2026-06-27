@@ -23,6 +23,14 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
             .IsRequired()
             .HasDefaultValue("UTC");
 
+        builder.Property(e => e.ShortDescription)
+            .HasMaxLength(300);
+
+        builder.Property(e => e.Visibility)
+            .HasMaxLength(10)
+            .IsRequired()
+            .HasDefaultValue("Public");
+
         builder.Property(e => e.Status)
             .HasMaxLength(20)
             .IsRequired()
@@ -30,6 +38,12 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
 
         builder.Property(e => e.MainImageUrl)
             .HasMaxLength(512);
+
+        builder.Property(e => e.ExternalUrl)
+            .HasMaxLength(2048);
+
+        builder.Property(e => e.RejectionReason)
+            .HasMaxLength(500);
 
         builder.Property(e => e.ThumbnailUrl)
             .HasMaxLength(512);
@@ -43,6 +57,9 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
         builder.HasIndex(e => e.Slug).IsUnique();
 
         builder.HasIndex(e => new { e.Status, e.StartDate })
+            .HasFilter("\"DeletedAt\" IS NULL");
+
+        builder.HasIndex(e => new { e.IsFeatured, e.Status, e.StartDate })
             .HasFilter("\"DeletedAt\" IS NULL");
 
         builder.HasIndex(e => new { e.OrganizerId, e.Status });
@@ -87,6 +104,11 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
         builder.HasMany(e => e.DiscountCodes)
             .WithOne(dc => dc.Event)
             .HasForeignKey(dc => dc.EventId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(e => e.EventFavorites)
+            .WithOne(ef => ef.Event)
+            .HasForeignKey(ef => ef.EventId)
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasMany(e => e.StaffList)

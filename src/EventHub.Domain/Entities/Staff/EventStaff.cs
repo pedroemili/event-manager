@@ -9,6 +9,7 @@ public sealed class EventStaff
     public Guid EventId { get; set; }
     public Guid UserId { get; set; }
     public Guid InvitedBy { get; set; }
+    public string? StaffRole { get; set; }
     public string Status { get; set; } = "Pending";
     public DateTime InvitedAt { get; set; } = DateTime.UtcNow;
     public DateTime? AcceptedAt { get; set; }

@@ -15,6 +15,8 @@ CREATE TABLE "Users" (
     "Email" VARCHAR(256) NOT NULL,
     "PasswordHash" VARCHAR(512) NOT NULL,
     "AvatarUrl" VARCHAR(512),
+    "PhoneNumber" VARCHAR(20),
+    "Timezone" VARCHAR(50),
     "EmailVerified" BOOLEAN NOT NULL DEFAULT FALSE,
     "IsActive" BOOLEAN NOT NULL DEFAULT TRUE,
     "FailedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
@@ -152,6 +154,23 @@ CREATE TABLE "EmailLogs" (
 CREATE INDEX "IX_EmailLogs_UserId" ON "EmailLogs" ("UserId");
 CREATE INDEX "IX_EmailLogs_Status" ON "EmailLogs" ("Status");
 
+CREATE TABLE "InAppNotifications" (
+    "Id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "UserId" UUID NOT NULL,
+    "Title" VARCHAR(300) NOT NULL,
+    "Message" VARCHAR(1000) NOT NULL,
+    "Type" VARCHAR(50) NOT NULL,
+    "IsRead" BOOLEAN NOT NULL DEFAULT FALSE,
+    "ReadAt" TIMESTAMPTZ,
+    "ActionUrl" VARCHAR(512),
+    "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "PK_InAppNotifications" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_InAppNotifications_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE CASCADE
+);
+
+CREATE INDEX "IX_InAppNotifications_UserId_IsRead" ON "InAppNotifications" ("UserId", "IsRead");
+CREATE INDEX "IX_InAppNotifications_UserId_CreatedAt" ON "InAppNotifications" ("UserId", "CreatedAt");
+
 -- ============================================
 -- MÓDULO: CATEGORÍAS Y TAGS
 -- ============================================
@@ -221,7 +240,9 @@ CREATE TABLE "Events" (
     "VenueId" UUID,
     "Title" VARCHAR(300) NOT NULL,
     "Slug" VARCHAR(350) NOT NULL,
+    "ShortDescription" VARCHAR(300),
     "Description" TEXT,
+    "Visibility" VARCHAR(10) NOT NULL DEFAULT 'Public',
     "StartDate" TIMESTAMPTZ NOT NULL,
     "EndDate" TIMESTAMPTZ NOT NULL,
     "Timezone" VARCHAR(50) NOT NULL DEFAULT 'UTC',
@@ -231,10 +252,14 @@ CREATE TABLE "Events" (
     "CardImageUrl" VARCHAR(512),
     "HeroImageUrl" VARCHAR(512),
     "MaxAttendees" INTEGER,
+    "AgeRestriction" INTEGER,
     "IsFeatured" BOOLEAN NOT NULL DEFAULT FALSE,
+    "ViewCount" INTEGER NOT NULL DEFAULT 0,
+    "ExternalUrl" VARCHAR(2048),
     "PublishedAt" TIMESTAMPTZ,
     "CancelledAt" TIMESTAMPTZ,
     "CancellationReason" TEXT,
+    "RejectionReason" VARCHAR(500),
     "CompletedAt" TIMESTAMPTZ,
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "UpdatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -243,10 +268,12 @@ CREATE TABLE "Events" (
     CONSTRAINT "FK_Events_Users_OrganizerId" FOREIGN KEY ("OrganizerId") REFERENCES "Users" ("Id") ON DELETE NO ACTION,
     CONSTRAINT "FK_Events_Categories_CategoryId" FOREIGN KEY ("CategoryId") REFERENCES "Categories" ("Id") ON DELETE SET NULL,
     CONSTRAINT "FK_Events_Venues_VenueId" FOREIGN KEY ("VenueId") REFERENCES "Venues" ("Id") ON DELETE SET NULL,
+    CONSTRAINT "CK_Events_Visibility" CHECK ("Visibility" IN ('Public', 'Private', 'Unlisted')),
     CONSTRAINT "CK_Events_Status" CHECK ("Status" IN ('Draft', 'Published', 'Cancelled', 'Completed'))
 );
 
 CREATE UNIQUE INDEX "IX_Events_Slug" ON "Events" ("Slug");
+CREATE INDEX "IX_Events_Featured_Status_StartDate" ON "Events" ("IsFeatured", "Status", "StartDate") WHERE "DeletedAt" IS NULL;
 CREATE INDEX "IX_Events_Status_StartDate" ON "Events" ("Status", "StartDate") WHERE "DeletedAt" IS NULL;
 CREATE INDEX "IX_Events_OrganizerId_Status" ON "Events" ("OrganizerId", "Status");
 CREATE INDEX "IX_Events_CategoryId_Status" ON "Events" ("CategoryId", "Status");
@@ -316,6 +343,7 @@ CREATE TABLE "TicketTypes" (
     "MinPerOrder" INTEGER NOT NULL DEFAULT 1,
     "MaxPerOrder" INTEGER NOT NULL DEFAULT 10,
     "Type" VARCHAR(20) NOT NULL DEFAULT 'Standard',
+    CONSTRAINT "CK_TicketTypes_Type" CHECK ("Type" IN ('Standard', 'VIP', 'EarlyBird', 'Group')),
     "SalesStartAt" TIMESTAMPTZ,
     "SalesEndAt" TIMESTAMPTZ,
     "IsActive" BOOLEAN NOT NULL DEFAULT TRUE,
@@ -356,6 +384,8 @@ CREATE INDEX "IX_DiscountCodes_EventId_IsActive" ON "DiscountCodes" ("EventId", 
 -- MÓDULO: ÓRDENES Y COMPRAS
 -- ============================================
 
+CREATE SEQUENCE order_number_seq START 1 INCREMENT 1;
+
 CREATE TABLE "Orders" (
     "Id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "UserId" UUID NOT NULL,
@@ -363,9 +393,14 @@ CREATE TABLE "Orders" (
     "OrderNumber" VARCHAR(30) NOT NULL,
     "SubtotalAmount" DECIMAL(10,2) NOT NULL,
     "DiscountAmount" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "TaxAmount" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "TotalAmount" DECIMAL(10,2) NOT NULL,
     "Currency" VARCHAR(3) NOT NULL DEFAULT 'USD',
     "Status" VARCHAR(15) NOT NULL DEFAULT 'Pending',
+    "PaymentMethod" VARCHAR(50),
+    "PaymentTransactionId" VARCHAR(100),
+    "PaymentStatus" VARCHAR(20),
+    "Notes" VARCHAR(500),
     "CancelledAt" TIMESTAMPTZ,
     "CancellationReason" VARCHAR(500),
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -385,6 +420,7 @@ CREATE TABLE "OrderItems" (
     "Id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "OrderId" UUID NOT NULL,
     "TicketTypeId" UUID NOT NULL,
+    "TicketTypeName" VARCHAR(100) NOT NULL,
     "Quantity" INTEGER NOT NULL CHECK ("Quantity" > 0),
     "UnitPrice" DECIMAL(10,2) NOT NULL,
     "Subtotal" DECIMAL(10,2) NOT NULL,
@@ -413,6 +449,8 @@ CREATE TABLE "Tickets" (
     "Status" VARCHAR(15) NOT NULL DEFAULT 'Active',
     "CheckedInAt" TIMESTAMPTZ,
     "CheckedInBy" UUID,
+    "CheckInMethod" VARCHAR(50),
+    "CheckInIpAddress" VARCHAR(45),
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "UpdatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "PK_Tickets" PRIMARY KEY ("Id"),
@@ -432,6 +470,7 @@ CREATE INDEX "IX_Tickets_EventId_CheckedIn" ON "Tickets" ("EventId", "Status") W
 
 CREATE TABLE "TicketReservations" (
     "Id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "ReservationCode" VARCHAR(20) NOT NULL,
     "TicketTypeId" UUID NOT NULL,
     "UserId" UUID NOT NULL,
     "Quantity" INTEGER NOT NULL CHECK ("Quantity" > 0),
@@ -446,6 +485,7 @@ CREATE TABLE "TicketReservations" (
     CONSTRAINT "FK_TicketReservations_Orders_OrderId" FOREIGN KEY ("OrderId") REFERENCES "Orders" ("Id") ON DELETE SET NULL
 );
 
+CREATE UNIQUE INDEX "IX_TicketReservations_ReservationCode" ON "TicketReservations" ("ReservationCode");
 CREATE INDEX "IX_TicketReservations_ExpiresAt" ON "TicketReservations" ("ExpiresAt") WHERE "IsConfirmed" = FALSE;
 CREATE INDEX "IX_TicketReservations_TicketTypeId" ON "TicketReservations" ("TicketTypeId", "IsConfirmed");
 
@@ -458,6 +498,7 @@ CREATE TABLE "EventStaff" (
     "EventId" UUID NOT NULL,
     "UserId" UUID NOT NULL,
     "InvitedBy" UUID NOT NULL,
+    "StaffRole" VARCHAR(50),
     "Status" VARCHAR(10) NOT NULL DEFAULT 'Pending',
     "InvitedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "AcceptedAt" TIMESTAMPTZ,
