@@ -2,6 +2,7 @@ using System.Text;
 using EventHub.API.Middleware;
 using EventHub.Application;
 using EventHub.Infrastructure;
+using EventHub.Infrastructure.Persistence.Initialization;
 using EventHub.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -58,6 +59,11 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddTransient<GlobalExceptionHandlingMiddleware>();
 
 var app = builder.Build();
+
+// Idempotent schema bootstrap + dev seed. Runs once on first startup
+// against a fresh database; subsequent restarts skip because public
+// schema already has tables.
+await DatabaseBootstrap.InitializeAsync(app.Services);
 
 if (isDevelopment)
 {

@@ -1,6 +1,7 @@
 using EventHub.Application.Common.Interfaces;
 using EventHub.Application.Common.Interfaces.Services;
 using EventHub.Infrastructure.Persistence;
+using EventHub.Infrastructure.Persistence.Initialization;
 using EventHub.Infrastructure.Repositories;
 using EventHub.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
@@ -48,6 +49,10 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
 
+        services.AddScoped<PostgresDatabaseInitializer>();
+        services.AddScoped<DeveloperSeedEnricher>();
+
         return services;
     }
 }
+
