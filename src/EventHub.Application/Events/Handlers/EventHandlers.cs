@@ -224,6 +224,20 @@ public sealed class GetEventBySlugHandler : IRequestHandler<GetEventBySlugQuery,
     }
 }
 
+public sealed class GetEventByIdHandler : IRequestHandler<GetEventByIdQuery, EventDetailResponse?>
+{
+    private readonly IEventRepository _repo;
+
+    public GetEventByIdHandler(IEventRepository repo) => _repo = repo;
+
+    public async Task<EventDetailResponse?> Handle(GetEventByIdQuery q, CancellationToken ct)
+    {
+        var evt = await _repo.GetByIdWithDetailsAsync(q.Id, ct);
+        if (evt is null) return null;
+        return EventMapper.ToDetail(evt);
+    }
+}
+
 public sealed class GetMyEventsHandler : IRequestHandler<GetMyEventsQuery, IReadOnlyList<EventListResponse>>
 {
     private readonly IEventRepository _repo;

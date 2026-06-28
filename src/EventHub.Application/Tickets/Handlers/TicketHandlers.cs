@@ -98,6 +98,7 @@ public sealed class ConfirmOrderHandler : IRequestHandler<ConfirmOrderCommand, O
         var unitPrice = ticketType.Price;
         var subtotal = unitPrice * reservation.Quantity;
 
+        // Step 1: persist Order alone so we get its DB-assigned Id.
         var order = new Order
         {
             UserId = reservation.UserId,
@@ -107,18 +108,21 @@ public sealed class ConfirmOrderHandler : IRequestHandler<ConfirmOrderCommand, O
             Status = OrderStatus.Confirmed.Value(),
             ConfirmedAt = DateTime.UtcNow
         };
+        await _orderRepo.AddAsync(order, ct);
+        await _uow.SaveChangesAsync(ct);
 
+        // Step 2: build OrderItems and Tickets now that we have the Order.Id.
         var orderItem = new OrderItem
         {
+            OrderId = order.Id,
             TicketTypeId = ticketType.Id,
             TicketTypeName = ticketType.Name,
             Quantity = reservation.Quantity,
             UnitPrice = unitPrice,
             Subtotal = subtotal
         };
+        order.OrderItems.Add(orderItem);
 
-        // Lease the next SoldQuantity for atomic ticket numbering; we
-        // persist SoldQuantity-as-we-go to avoid unique-key collisions.
         var sequenceStart = ticketType.SoldQuantity;
         for (int i = 0; i < reservation.Quantity; i++)
         {
@@ -129,20 +133,20 @@ public sealed class ConfirmOrderHandler : IRequestHandler<ConfirmOrderCommand, O
             {
                 UserId = reservation.UserId,
                 EventId = ticketType.EventId,
+                OrderId = order.Id,
+                OrderItemId = orderItem.Id,
                 TicketNumber = ticketNumber,
                 QrCodeData = _qrService.GenerateQrData(Guid.NewGuid(), ticketType.EventId, reservation.UserId)
             };
             orderItem.Tickets.Add(ticket);
         }
-
-        order.OrderItems.Add(orderItem);
         ticketType.SoldQuantity += reservation.Quantity;
 
+        // Step 3: update TicketReservation to point to the order.
         reservation.IsConfirmed = true;
         reservation.ConfirmedAt = DateTime.UtcNow;
         reservation.OrderId = order.Id;
 
-        await _orderRepo.AddAsync(order, ct);
         await _uow.SaveChangesAsync(ct);
 
         return TicketMapper.ToOrderResponse(order);

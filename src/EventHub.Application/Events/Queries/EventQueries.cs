@@ -7,6 +7,8 @@ namespace EventHub.Application.Events.Queries;
 
 public sealed record GetEventBySlugQuery(string Slug) : IRequest<EventDetailResponse?>;
 
+public sealed record GetEventByIdQuery(Guid Id) : IRequest<EventDetailResponse?>;
+
 public sealed record GetMyEventsQuery : IRequest<IReadOnlyList<EventListResponse>>;
 
 public sealed record GetPublishedEventsQuery(
