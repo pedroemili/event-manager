@@ -1,8 +1,7 @@
 using EventHub.Application.Auth.Commands;
 using EventHub.Application.Auth.DTOs;
-using EventHub.Application.Common.Interfaces.Services;
+using EventHub.Shared.Exceptions;
 using EventHub.Shared.Responses;
-using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,20 +11,6 @@ namespace EventHub.API.Controllers;
 [Route("api/[controller]")]
 public sealed class AuthController : ApiControllerBase
 {
-    private readonly IConfiguration _config;
-    private readonly ICurrentUserService _currentUser;
-    private readonly ILogger<AuthController> _logger;
-
-    public AuthController(
-        IConfiguration config,
-        ICurrentUserService currentUser,
-        ILogger<AuthController> logger)
-    {
-        _config = config;
-        _currentUser = currentUser;
-        _logger = logger;
-    }
-
     [HttpPost("register")]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object>>> Register(
@@ -112,7 +97,7 @@ public sealed class AuthController : ApiControllerBase
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = _currentUser.UserId ?? throw new UnauthorizedAccessException();
+        var userId = CurrentUser.UserId ?? throw new UnauthorizedException();
         await Mediator.Send(
             new ChangePasswordCommand(userId, request.CurrentPassword, request.NewPassword),
             cancellationToken);
@@ -123,7 +108,7 @@ public sealed class AuthController : ApiControllerBase
     [Authorize]
     public async Task<ActionResult<ApiResponse<UserProfileResponse>>> GetProfile(CancellationToken cancellationToken)
     {
-        var userId = _currentUser.UserId ?? throw new UnauthorizedAccessException();
+        var userId = CurrentUser.UserId ?? throw new UnauthorizedException();
         var profile = await Mediator.Send(new GetProfileQuery(userId), cancellationToken);
         return Ok(profile);
     }

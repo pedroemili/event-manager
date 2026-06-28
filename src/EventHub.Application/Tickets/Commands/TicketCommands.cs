@@ -12,7 +12,7 @@ public sealed record CreateReservationCommand(Guid TicketTypeId, int Quantity) :
 
 public sealed record ConfirmOrderCommand(Guid ReservationId, string? DiscountCode) : IRequest<OrderResponse>;
 
-public sealed record ValidateTicketCommand(string QrData, Guid EventId) : IRequest<TicketResponse>;
+public sealed record ValidateTicketCommand(string QrData, Guid EventId, string IpAddress) : IRequest<TicketResponse>;
 
 public sealed record CancelOrderCommand(Guid OrderId) : IRequest;
 

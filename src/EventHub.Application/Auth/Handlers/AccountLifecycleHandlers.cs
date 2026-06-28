@@ -50,10 +50,7 @@ public sealed class ResetPasswordHandler : IRequestHandler<ResetPasswordCommand>
 
     public async Task Handle(ResetPasswordCommand request, CancellationToken cancellationToken)
     {
-        var user = (await _userRepo.GetAllAsync(cancellationToken))
-            .FirstOrDefault(u => u.PasswordResetTokens.Any(
-                t => t.Token == request.Token && t.ExpiresAt > DateTime.UtcNow && !t.IsUsed));
-
+        var user = await _userRepo.GetByPasswordResetTokenAsync(request.Token, cancellationToken);
         if (user is null) throw new BadRequestException("Token inválido o expirado.");
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, 12);
@@ -77,17 +74,11 @@ public sealed class VerifyEmailHandler : IRequestHandler<VerifyEmailCommand>
 
     public async Task Handle(VerifyEmailCommand request, CancellationToken cancellationToken)
     {
-        var users = await _userRepo.GetAllAsync(cancellationToken);
-        var token = users
-            .SelectMany(u => u.EmailVerificationTokens)
-            .FirstOrDefault(t => t.Token == request.Token
-                && t.ExpiresAt > DateTime.UtcNow
-                && t.UsedAt == null);
+        var user = await _userRepo.GetByEmailVerificationTokenAsync(request.Token, cancellationToken);
+        if (user is null) throw new BadRequestException("Token inválido o expirado.");
 
-        if (token is null) throw new BadRequestException("Token inválido o expirado.");
-
+        var token = user.EmailVerificationTokens.First(t => t.Token == request.Token);
         token.UsedAt = DateTime.UtcNow;
-        var user = users.First(u => u.Id == token.UserId);
         user.EmailVerified = true;
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -1,8 +1,11 @@
+using System.Security.Cryptography;
+using EventHub.Application.Common;
 using EventHub.Application.Common.Interfaces;
 using EventHub.Application.Common.Interfaces.Services;
 using EventHub.Application.Tickets.Commands;
 using EventHub.Application.Tickets.DTOs;
 using EventHub.Domain.Entities.Tickets;
+using EventHub.Domain.Enums;
 using EventHub.Shared.Exceptions;
 using EventHub.Shared.Helpers;
 using MediatR;
@@ -33,7 +36,7 @@ public sealed class CreateReservationHandler : IRequestHandler<CreateReservation
         var userId = _currentUser.UserId ?? throw new UnauthorizedException();
         var ticketType = await _ticketTypeRepo.GetByIdAsync(cmd.TicketTypeId, ct);
         if (ticketType is null) throw new NotFoundException(nameof(TicketType), cmd.TicketTypeId);
-        if (ticketType.SoldQuantity + cmd.Quantity > ticketType.TotalQuantity)
+        if (ticketType.TotalQuantity - ticketType.SoldQuantity < cmd.Quantity)
             throw new BadRequestException("No hay suficientes boletos disponibles.");
 
         var reservation = new TicketReservation
@@ -42,13 +45,21 @@ public sealed class CreateReservationHandler : IRequestHandler<CreateReservation
             UserId = userId,
             Quantity = cmd.Quantity,
             ExpiresAt = DateTime.UtcNow.AddMinutes(15),
-            ReservationCode = $"RSV-{Random.Shared.Next(100000, 999999)}"
+            ReservationCode = $"RSV-{GenerateReservationCode()}"
         };
 
         await _reservationRepo.AddAsync(reservation, ct);
         await _uow.SaveChangesAsync(ct);
 
         return new ReservationResponse(reservation.Id, reservation.ReservationCode, reservation.ExpiresAt);
+    }
+
+    private static string GenerateReservationCode()
+    {
+        Span<byte> bytes = stackalloc byte[6];
+        RandomNumberGenerator.Fill(bytes);
+        var n = BitConverter.ToUInt32(bytes) % 900_000 + 100_000;
+        return n.ToString();
     }
 }
 
@@ -90,9 +101,10 @@ public sealed class ConfirmOrderHandler : IRequestHandler<ConfirmOrderCommand, O
         var order = new Order
         {
             UserId = reservation.UserId,
+            OrderNumber = OrderNumberGenerator.Generate(),
             SubtotalAmount = subtotal,
             TotalAmount = subtotal,
-            Status = "Confirmed",
+            Status = OrderStatus.Confirmed.Value(),
             ConfirmedAt = DateTime.UtcNow
         };
 
@@ -105,13 +117,19 @@ public sealed class ConfirmOrderHandler : IRequestHandler<ConfirmOrderCommand, O
             Subtotal = subtotal
         };
 
+        // Lease the next SoldQuantity for atomic ticket numbering; we
+        // persist SoldQuantity-as-we-go to avoid unique-key collisions.
+        var sequenceStart = ticketType.SoldQuantity;
         for (int i = 0; i < reservation.Quantity; i++)
         {
+            var ticketNumber = TicketNumberGenerator.Generate(
+                ticketType.EventId.ToString("N")[..6],
+                sequenceStart + i + 1);
             var ticket = new Ticket
             {
                 UserId = reservation.UserId,
                 EventId = ticketType.EventId,
-                TicketNumber = TicketNumberGenerator.Generate(ticketType.EventId.ToString("N")[..6], ticketType.SoldQuantity + 1),
+                TicketNumber = ticketNumber,
                 QrCodeData = _qrService.GenerateQrData(Guid.NewGuid(), ticketType.EventId, reservation.UserId)
             };
             orderItem.Tickets.Add(ticket);
@@ -127,19 +145,7 @@ public sealed class ConfirmOrderHandler : IRequestHandler<ConfirmOrderCommand, O
         await _orderRepo.AddAsync(order, ct);
         await _uow.SaveChangesAsync(ct);
 
-        return new OrderResponse(
-            order.Id, order.OrderNumber ?? OrderNumberGenerator.Generate(),
-            order.SubtotalAmount, order.DiscountAmount, order.TaxAmount,
-            order.TotalAmount, order.Currency, order.Status,
-            order.PaymentMethod, order.PaymentStatus, order.CreatedAt,
-            order.OrderItems.Select(oi => new OrderItemResponse(
-                oi.Id, oi.TicketTypeName, oi.Quantity, oi.UnitPrice, oi.Subtotal,
-                oi.Tickets.Select(t => new TicketResponse(
-                    t.Id, t.TicketNumber, t.QrCodeData, t.QrCodeImageUrl,
-                    t.Status, t.CheckedInAt, null, DateTime.MinValue, null, null
-                )).ToList()
-            )).ToList()
-        );
+        return TicketMapper.ToOrderResponse(order);
     }
 }
 
@@ -164,23 +170,22 @@ public sealed class ValidateTicketHandler : IRequestHandler<ValidateTicketComman
         var decoded = _qrService.DecodeQrData(cmd.QrData);
         if (decoded is null) throw new BadRequestException("QR inválido.");
 
-        var ticket = await _repo.GetByQrDataAsync(cmd.QrData, ct);
-        if (ticket is null) throw new NotFoundException(nameof(Ticket), decoded.Value.ticketId);
+        var ticket = await _repo.GetByQrDataForUpdateAsync(cmd.QrData, ct)
+            ?? throw new NotFoundException(nameof(Ticket), decoded.Value.ticketId);
 
-        if (ticket.Status != "Active") throw new BadRequestException($"Este boleto ya fue {ticket.Status.ToLowerInvariant()}.");
-        if (ticket.EventId != cmd.EventId) throw new BadRequestException("Este boleto no pertenece a este evento.");
+        if (ticket.Status.ToTicketStatus() != TicketStatus.Active)
+            throw new BadRequestException($"Este boleto ya fue {ticket.Status.ToLowerInvariant()}.");
+        if (ticket.EventId != cmd.EventId)
+            throw new BadRequestException("Este boleto no pertenece a este evento.");
 
-        ticket.Status = "Used";
+        ticket.Status = TicketStatus.Used.Value();
         ticket.CheckedInAt = DateTime.UtcNow;
         ticket.CheckedInBy = staffId;
         ticket.CheckInMethod = "QR_SCAN";
+        ticket.CheckInIpAddress = cmd.IpAddress;
         await _uow.SaveChangesAsync(ct);
 
-        return new TicketResponse(
-            ticket.Id, ticket.TicketNumber, ticket.QrCodeData, ticket.QrCodeImageUrl,
-            ticket.Status, ticket.CheckedInAt, ticket.Event.Title, ticket.Event.StartDate,
-            ticket.Event.Venue?.Name, ticket.OrderItem.TicketTypeName
-        );
+        return TicketMapper.ToTicketResponse(ticket);
     }
 }
 
@@ -199,11 +204,7 @@ public sealed class GetMyTicketsHandler : IRequestHandler<GetMyTicketsQuery, IRe
     {
         var userId = _currentUser.UserId ?? throw new UnauthorizedException();
         var tickets = await _repo.GetByUserIdAsync(userId, ct);
-        return tickets.Select(t => new TicketResponse(
-            t.Id, t.TicketNumber, t.QrCodeData, t.QrCodeImageUrl,
-            t.Status, t.CheckedInAt, t.Event.Title, t.Event.StartDate,
-            t.Event.Venue?.Name, t.OrderItem.TicketTypeName
-        )).ToList();
+        return tickets.Select(TicketMapper.ToTicketResponse).ToList();
     }
 }
 
@@ -222,16 +223,29 @@ public sealed class GetMyOrdersHandler : IRequestHandler<GetMyOrdersQuery, IRead
     {
         var userId = _currentUser.UserId ?? throw new UnauthorizedException();
         var orders = await _repo.GetByUserIdAsync(userId, ct);
-        return orders.Select(o => new OrderResponse(
-            o.Id, o.OrderNumber, o.SubtotalAmount, o.DiscountAmount, o.TaxAmount,
-            o.TotalAmount, o.Currency, o.Status, o.PaymentMethod, o.PaymentStatus, o.CreatedAt,
-            o.OrderItems.Select(oi => new OrderItemResponse(
-                oi.Id, oi.TicketTypeName, oi.Quantity, oi.UnitPrice, oi.Subtotal,
-                oi.Tickets.Select(t => new TicketResponse(
-                    t.Id, t.TicketNumber, t.QrCodeData, t.QrCodeImageUrl,
-                    t.Status, t.CheckedInAt, null, DateTime.MinValue, null, null
-                )).ToList()
-            )).ToList()
-        )).ToList();
+        return orders.Select(TicketMapper.ToOrderResponse).ToList();
     }
+}
+
+/// <summary>
+/// Centralizes Ticket/Order -> DTO mapping. Removes the inline mapping
+/// duplication that previously lived in 4 different handlers.
+/// </summary>
+internal static class TicketMapper
+{
+    public static TicketResponse ToTicketResponse(Ticket t) => new(
+        t.Id, t.TicketNumber, t.QrCodeData, t.QrCodeImageUrl,
+        t.Status, t.CheckedInAt,
+        t.Event?.Title,
+        t.Event?.StartDate ?? default,
+        t.Event?.Venue?.Name,
+        t.OrderItem?.TicketTypeName);
+
+    public static OrderResponse ToOrderResponse(Order o) => new(
+        o.Id, o.OrderNumber, o.SubtotalAmount, o.DiscountAmount, o.TaxAmount,
+        o.TotalAmount, o.Currency, o.Status, o.PaymentMethod, o.PaymentStatus, o.CreatedAt,
+        o.OrderItems?.Select(oi => new OrderItemResponse(
+            oi.Id, oi.TicketTypeName, oi.Quantity, oi.UnitPrice, oi.Subtotal,
+            oi.Tickets?.Select(ToTicketResponse).ToList() ?? new List<TicketResponse>())).ToList()
+        ?? new List<OrderItemResponse>());
 }

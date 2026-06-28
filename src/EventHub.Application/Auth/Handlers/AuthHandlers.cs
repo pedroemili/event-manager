@@ -5,7 +5,9 @@ using EventHub.Application.Common.Interfaces;
 using EventHub.Application.Common.Interfaces.Services;
 using EventHub.Domain.Entities.Auth;
 using EventHub.Domain.Entities.Users;
+using EventHub.Domain.Enums;
 using EventHub.Shared.Exceptions;
+using EventHub.Shared.Helpers;
 using MediatR;
 
 namespace EventHub.Application.Auth.Handlers;
@@ -13,10 +15,12 @@ namespace EventHub.Application.Auth.Handlers;
 public sealed class RegisterHandler : IRequestHandler<RegisterCommand>
 {
     private readonly IUserRepository _userRepo;
+    private readonly IUnitOfWork _uow;
 
-    public RegisterHandler(IUserRepository userRepo)
+    public RegisterHandler(IUserRepository userRepo, IUnitOfWork uow)
     {
         _userRepo = userRepo;
+        _uow = uow;
     }
 
     public async Task Handle(RegisterCommand request, CancellationToken cancellationToken)
@@ -46,8 +50,7 @@ public sealed class RegisterHandler : IRequestHandler<RegisterCommand>
         });
 
         await _userRepo.AddAsync(user, cancellationToken);
-        await _userRepo.SaveChangesAsync(cancellationToken);
-
+        await _uow.SaveChangesAsync(cancellationToken);
     }
 }
 
@@ -100,13 +103,11 @@ public sealed class LoginHandler : IRequestHandler<LoginCommand, AuthResponse>
 
         await _refreshTokens.AddAsync(refreshToken, cancellationToken);
 
-        var tracked = await _userRepo.GetByIdAsync(user.Id, cancellationToken);
-        if (tracked is not null)
-        {
-            tracked.LastLoginAt = DateTime.UtcNow;
-            tracked.FailedLoginAttempts = 0;
-            await _uow.SaveChangesAsync(cancellationToken);
-        }
+        // Mutate the User tracked in GetByEmailAsync above (different DbContext
+        // instance per repo). Avoid re-fetching.
+        user.LastLoginAt = DateTime.UtcNow;
+        user.FailedLoginAttempts = 0;
+        await _uow.SaveChangesAsync(cancellationToken);
 
         return new AuthResponse(accessToken, refreshTokenValue, _jwtService.GetAccessTokenExpirationMinutes() * 60);
     }
@@ -115,17 +116,21 @@ public sealed class LoginHandler : IRequestHandler<LoginCommand, AuthResponse>
 public sealed class LogoutHandler : IRequestHandler<LogoutCommand>
 {
     private readonly IRefreshTokenStore _refreshTokens;
+    private readonly IUnitOfWork _uow;
 
-    public LogoutHandler(IRefreshTokenStore refreshTokens)
+    public LogoutHandler(IRefreshTokenStore refreshTokens, IUnitOfWork uow)
     {
         _refreshTokens = refreshTokens;
+        _uow = uow;
     }
 
     public async Task Handle(LogoutCommand request, CancellationToken cancellationToken)
     {
-        var token = await _refreshTokens.GetByTokenAsync(request.RefreshToken, cancellationToken);
-        if (token is null) return;
-        await _refreshTokens.RevokeAsync(token, cancellationToken);
+        var stored = await _refreshTokens.GetByTokenForUpdateAsync(request.RefreshToken, cancellationToken);
+        if (stored is null) return;
+
+        _refreshTokens.MarkRevoked(stored);
+        await _uow.SaveChangesAsync(cancellationToken);
     }
 }
 

@@ -15,9 +15,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+var isDevelopment = builder.Environment.IsDevelopment();
+
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtSecret = jwtSection.GetValue<string>("Secret")
     ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
+if (jwtSecret.Length < 32)
+    throw new InvalidOperationException("Jwt:Secret must be at least 32 characters long.");
 var jwtIssuer = jwtSection.GetValue<string>("Issuer") ?? "EventHub";
 var jwtAudience = jwtSection.GetValue<string>("Audience") ?? "EventHub";
 
@@ -29,7 +33,7 @@ builder.Services
     })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false;
+        options.RequireHttpsMetadata = !isDevelopment;
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -55,7 +59,7 @@ builder.Services.AddTransient<GlobalExceptionHandlingMiddleware>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+if (isDevelopment)
 {
     app.UseSwagger();
     app.UseSwaggerUI();

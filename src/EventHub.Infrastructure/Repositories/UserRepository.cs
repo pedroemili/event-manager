@@ -35,6 +35,38 @@ public sealed class UserRepository : Repository<User>, IUserRepository
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
     }
 
+    public async Task<User?> GetByEmailVerificationTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        var record = await Context.EmailVerificationTokens
+            .AsNoTracking()
+            .Where(t => t.Token == token
+                && t.ExpiresAt > DateTime.UtcNow
+                && t.UsedAt == null)
+            .Select(t => new { t.UserId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (record is null) return null;
+        return await Context.Users
+            .Include(u => u.EmailVerificationTokens)
+            .FirstOrDefaultAsync(u => u.Id == record.UserId, cancellationToken);
+    }
+
+    public async Task<User?> GetByPasswordResetTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        var record = await Context.PasswordResetTokens
+            .AsNoTracking()
+            .Where(t => t.Token == token
+                && t.ExpiresAt > DateTime.UtcNow
+                && !t.IsUsed)
+            .Select(t => new { t.UserId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (record is null) return null;
+        return await Context.Users
+            .Include(u => u.PasswordResetTokens)
+            .FirstOrDefaultAsync(u => u.Id == record.UserId, cancellationToken);
+    }
+
     public async Task<bool> IsEmailUniqueAsync(string email, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(email)) return false;

@@ -11,11 +11,26 @@ public sealed class TicketRepository : Repository<Ticket>, ITicketRepository
 
     public async Task<Ticket?> GetByQrDataAsync(string qrData, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(qrData)) return null;
+        return await Context.Tickets
+            .AsNoTracking()
+            .Include(t => t.Event)
+                .ThenInclude(e => e.Venue)
+            .Include(t => t.OrderItem)
+            .FirstOrDefaultAsync(t => t.QrCodeData == qrData, cancellationToken);
+    }
+
+    /// <summary>
+    /// Tracked read for check-in mutations. Caller is responsible for
+    /// persisting via UnitOfWork. Use a transaction at the handler level
+    /// to make concurrent scan races safe.
+    /// </summary>
+    public async Task<Ticket?> GetByQrDataForUpdateAsync(string qrData, CancellationToken cancellationToken = default)
+    {
         return await Context.Tickets
             .Include(t => t.Event)
                 .ThenInclude(e => e.Venue)
             .Include(t => t.OrderItem)
+            .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.QrCodeData == qrData, cancellationToken);
     }
 

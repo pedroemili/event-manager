@@ -20,5 +20,6 @@ public sealed class ValidateTicketCommandValidator : AbstractValidator<ValidateT
     {
         RuleFor(x => x.QrData).NotEmpty();
         RuleFor(x => x.EventId).NotEmpty();
+        RuleFor(x => x.IpAddress).NotEmpty();
     }
 }
