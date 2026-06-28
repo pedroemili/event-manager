@@ -5,8 +5,9 @@ import { Calendar, Ticket, DollarSign, TrendingUp } from 'lucide-react';
 
 export default function DashboardPage() {
   const { data: metrics, isLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: dashboardService.getMetrics,
+    queryKey: ['dashboard', 'organizer'],
+    queryFn: dashboardService.getOrganizerMetrics,
+    retry: false,
   });
 
   if (isLoading) return <Spinner className="py-20" />;

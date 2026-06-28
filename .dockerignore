@@ -1,0 +1,43 @@
+# Project-wide .dockerignore for the root docker-compose build context.
+
+**/.DS_Store
+**/.vs/
+**/.vscode/
+**/.idea/
+**/*.swp
+**/*.swo
+**/*.log
+
+# Test /
+**/TestResults/
+**/coverage/
+
+# Local env
+**/.env.local
+**/.env.*.local
+
+# dotnet
+**/bin/
+**/obj/
+**/out/
+
+# node
+**/node_modules/
+**/npm-debug.log*
+**/yarn-*.log*
+**/.npm/
+**/.next/
+**/dist/
+
+# Local Postgres sandbox
+**/pgdata/
+**/pgsocket/
+**/pglog
+
+# Git
+**/.git/
+
+# Docker / compose meta
+**/.dockerignore
+**/Dockerfile*
+**/docker-compose*.yml

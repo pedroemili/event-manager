@@ -1,0 +1,45 @@
+# ============== STAGE 1: build ==============
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Cache NuGet restore by copying just csproj files first.
+COPY src/EventHub.Shared/EventHub.Shared.csproj src/EventHub.Shared/
+COPY src/EventHub.Domain/EventHub.Domain.csproj src/EventHub.Domain/
+COPY src/EventHub.Application/EventHub.Application.csproj src/EventHub.Application/
+COPY src/EventHub.Infrastructure/EventHub.Infrastructure.csproj src/EventHub.Infrastructure/
+COPY src/EventHub.API/EventHub.API.csproj src/EventHub.API/
+RUN dotnet restore src/EventHub.API/EventHub.API.csproj
+
+COPY src/ src/
+
+# Build in Release for runtime production-suitable binary (smaller, optimized).
+RUN dotnet publish src/EventHub.API/EventHub.API.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore \
+    /p:UseAppHost=false
+
+# ============== STAGE 2: runtime ==============
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+
+# Non-root user (best-practice container hardening).
+RUN groupadd -r app && useradd -r -g app app
+USER app
+
+COPY --from=build /app/publish .
+
+# Listen on 8080 inside the network; docker-compose maps to a host port.
+ENV ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_ENVIRONMENT=Production \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_CONFIGURATION_Release
+
+EXPOSE 8080
+
+# Healthcheck: cheap GET against the public categories endpoint once the DB
+# is bootstrapped. Failure retries up to 30s to let DatabaseBootstrap finish.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8080/api/categories >/dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["dotnet", "EventHub.API.dll"]

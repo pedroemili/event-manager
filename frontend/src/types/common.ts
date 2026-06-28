@@ -14,6 +14,11 @@ export interface PagedResult<T> {
   hasPreviousPage: boolean;
 }
 
+/**
+ * Matches the backend's DashboardMetricsResponse record. ASP.NET Core
+ * serializes records by camelCasing PascalCase members, so each field
+ * here matches GetOrganizerMetricsHandler's projection.
+ */
 export interface DashboardMetrics {
   activeEvents: number;
   completedEvents: number;
@@ -26,7 +31,7 @@ export interface DashboardMetrics {
     title: string;
     soldCount: number;
     revenue: number;
-  };
+  } | null;
 }
 
 export interface RevenueChartData {

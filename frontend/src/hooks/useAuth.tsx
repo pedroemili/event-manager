@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService } from '@/services/auth';
+import { tokenStore } from '@/services/api';
 import type { User, LoginRequest, RegisterRequest } from '@/types';
 
 interface AuthContextType {
@@ -17,7 +18,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [isAuthenticated, setIsAuthenticated] = useState(
-    () => !!localStorage.getItem('accessToken')
+    () => !!tokenStore.accessToken
   );
 
   const { data: user, isLoading } = useQuery({
@@ -31,8 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginMutation = useMutation({
     mutationFn: authService.login,
     onSuccess: (tokens) => {
-      localStorage.setItem('accessToken', tokens.accessToken);
-      localStorage.setItem('refreshToken', tokens.refreshToken);
+      tokenStore.set(tokens.accessToken, tokens.refreshToken);
       setIsAuthenticated(true);
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
@@ -40,6 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: authService.register,
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: (payload: { currentPassword: string; newPassword: string }) =>
+      authService.changePassword(payload.currentPassword, payload.newPassword),
   });
 
   const login = useCallback(
@@ -57,9 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    await authService.logout();
-    setIsAuthenticated(false);
-    queryClient.clear();
+    try {
+      await authService.logout();
+    } finally {
+      tokenStore.clear();
+      setIsAuthenticated(false);
+      queryClient.clear();
+    }
   }, [queryClient]);
 
   return (

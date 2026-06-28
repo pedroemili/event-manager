@@ -11,147 +11,107 @@ import type {
   Category,
   Venue,
   DashboardMetrics,
-  RevenueChartData,
-  DiscountCode,
 } from '@/types';
 
+async function unwrap<T>(promise: Promise<{ data: T | { data: T } }>): Promise<T> {
+  const response = await promise;
+  const body = response.data as unknown;
+  if (body && typeof body === 'object' && 'data' in body) {
+    return (body as { data: T }).data;
+  }
+  return body as T;
+}
+
+interface EventsListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  categoryId?: string;
+  fromDate?: string;
+  featured?: boolean;
+  upcoming?: boolean;
+}
+
 export const eventService = {
-  getAll: async (params?: Record<string, string>) => {
-    const response = await api.get<PagedResult<Event>>('/events', { params });
-    return response.data;
+  listPublished: async (params: EventsListParams = {}): Promise<PagedResult<Event>> =>
+    unwrap(api.get<PagedResult<Event>>('/events', { params: { ...params } })),
+
+  getBySlug: async (slug: string): Promise<Event | null> => {
+    try {
+      return await unwrap(api.get<Event>(`/events/slug/${encodeURIComponent(slug)}`));
+    } catch {
+      return null;
+    }
   },
 
-  getBySlug: async (slug: string) => {
-    const response = await api.get<Event>(`/events/${slug}`);
-    return response.data;
+  getById: async (id: string): Promise<Event | null> => {
+    try {
+      return await unwrap(api.get<Event>(`/events/${id}`));
+    } catch {
+      return null;
+    }
   },
 
-  create: async (data: CreateEventRequest) => {
-    const response = await api.post<Event>('/events', data);
-    return response.data;
-  },
+  getMine: async (): Promise<Event[]> => unwrap(api.get<Event[]>('/events/mine')),
 
-  update: async (id: string, data: Partial<CreateEventRequest>) => {
-    const response = await api.put<Event>(`/events/${id}`, data);
-    return response.data;
-  },
+  create: async (data: CreateEventRequest): Promise<Event> =>
+    unwrap(api.post<Event>('/events', data)),
 
-  delete: async (id: string) => {
-    await api.delete(`/events/${id}`);
-  },
+  update: async (id: string, data: CreateEventRequest): Promise<Event> =>
+    unwrap(api.put<Event>(`/events/${id}`, data)),
 
-  publish: async (id: string) => {
-    const response = await api.post<Event>(`/events/${id}/publish`);
-    return response.data;
-  },
+  publish: async (id: string): Promise<Event> =>
+    unwrap(api.post<Event>(`/events/${id}/publish`)),
 
-  cancel: async (id: string, reason: string) => {
-    const response = await api.post<Event>(`/events/${id}/cancel`, { reason });
-    return response.data;
-  },
+  cancel: async (id: string, reason: string): Promise<Event> =>
+    unwrap(api.post<Event>(`/events/${id}/cancel`, { reason })),
 
-  uploadImage: async (eventId: string, file: File) => {
-    const formData = new FormData();
-    formData.append('image', file);
-    const response = await api.post(`/events/${eventId}/images`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return response.data;
-  },
-
-  toggleFavorite: async (eventId: string) => {
-    const response = await api.post(`/events/${eventId}/favorite`);
-    return response.data;
-  },
+  toggleFavorite: async (id: string): Promise<boolean> =>
+    unwrap(api.post<boolean>(`/events/${id}/favorite`)),
 };
 
 export const ticketService = {
-  getTicketTypes: async (eventId: string) => {
-    const response = await api.get<TicketType[]>(`/events/${eventId}/ticket-types`);
-    return response.data;
+  createReservation: async (
+    ticketTypeId: string,
+    quantity: number
+  ): Promise<TicketReservation> =>
+    unwrap(
+      api.post<TicketReservation>('/tickets/reservations', {
+        ticketTypeId,
+        quantity,
+      })
+    ),
+
+  confirmOrder: async (data: CreateOrderRequest): Promise<Order> =>
+    unwrap(api.post<Order>('/tickets/orders/confirm', data)),
+
+  cancelOrder: async (orderId: string): Promise<void> => {
+    await api.post(`/tickets/orders/${orderId}/cancel`);
   },
 
-  createReservation: async (ticketTypeId: string, quantity: number) => {
-    const response = await api.post<TicketReservation>('/tickets/reservations', {
-      ticketTypeId,
-      quantity,
-    });
-    return response.data;
-  },
+  validateTicket: async (qrData: string, eventId: string): Promise<Ticket> =>
+    unwrap(
+      api.post<Ticket>('/tickets/validate', { qrData, eventId })
+    ),
 
-  confirmOrder: async (data: CreateOrderRequest) => {
-    const response = await api.post<Order>('/orders', data);
-    return response.data;
-  },
+  getMyTickets: async (): Promise<Ticket[]> =>
+    unwrap(api.get<Ticket[]>('/tickets/mine')),
 
-  getMyTickets: async () => {
-    const response = await api.get<Ticket[]>('/tickets/mine');
-    return response.data;
-  },
-
-  getMyOrders: async () => {
-    const response = await api.get<Order[]>('/orders/mine');
-    return response.data;
-  },
-
-  cancelOrder: async (orderId: string) => {
-    await api.post(`/orders/${orderId}/cancel`);
-  },
-
-  validateTicket: async (qrData: string) => {
-    const response = await api.post<Ticket>('/tickets/validate', { qrData });
-    return response.data;
-  },
+  getMyOrders: async (): Promise<Order[]> =>
+    unwrap(api.get<Order[]>('/tickets/orders')),
 };
 
 export const venueService = {
-  getAll: async () => {
-    const response = await api.get<Venue[]>('/venues');
-    return response.data;
-  },
-
-  create: async (data: Partial<Venue>) => {
-    const response = await api.post<Venue>('/venues', data);
-    return response.data;
-  },
-
-  update: async (id: string, data: Partial<Venue>) => {
-    const response = await api.put<Venue>(`/venues/${id}`, data);
-    return response.data;
-  },
-
-  delete: async (id: string) => {
-    await api.delete(`/venues/${id}`);
-  },
+  getAll: async (): Promise<Venue[]> =>
+    unwrap(api.get<Venue[]>('/venues')),
 };
 
 export const categoryService = {
-  getAll: async () => {
-    const response = await api.get<Category[]>('/categories');
-    return response.data;
-  },
+  getAll: async (): Promise<Category[]> =>
+    unwrap(api.get<Category[]>('/categories')),
 };
 
 export const dashboardService = {
-  getMetrics: async () => {
-    const response = await api.get<DashboardMetrics>('/dashboard/metrics');
-    return response.data;
-  },
-
-  getRevenueChart: async (months: number = 12) => {
-    const response = await api.get<RevenueChartData[]>('/dashboard/revenue', {
-      params: { months },
-    });
-    return response.data;
-  },
-};
-
-export const discountService = {
-  validate: async (eventId: string, code: string) => {
-    const response = await api.post<DiscountCode>('/discounts/validate', {
-      eventId,
-      code,
-    });
-    return response.data;
-  },
+  getOrganizerMetrics: async (): Promise<DashboardMetrics> =>
+    unwrap(api.get<DashboardMetrics>('/dashboard/organizer/metrics')),
 };

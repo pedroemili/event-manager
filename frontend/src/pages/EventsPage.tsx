@@ -8,7 +8,7 @@ import type { Event } from '@/types';
 export default function EventsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['events'],
-    queryFn: () => eventService.getAll(),
+    queryFn: () => eventService.listPublished(),
   });
 
   const events = data?.items ?? [];

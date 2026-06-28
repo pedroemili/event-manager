@@ -1,0 +1,107 @@
+# docker-compose.yml — full EventHub local stack
+#
+#   frontend   :80  - nginx serving SPA + proxy /api -> api:8080
+#   api       :8080 - ASP.NET Core 8 Web API (auto-bootstraps schema)
+#   postgres  :5432 - PostgreSQL 16 with seed (Roles, Categories)
+#   redis     :6379 - cache/event-bus
+#   seq       :5341 - structured logs viewer (dev only)
+#
+# Usage:
+#   docker compose up --build           # builds and runs in foreground
+#   docker compose up -d                # detached
+#   docker compose down                 # tear down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eventhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eventhub_db
+      POSTGRES_USER: eventhub
+      POSTGRES_PASSWORD: eventhub_dev_2024
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventhub -d eventhub_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: eventhub-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  seq:
+    image: datalust/seq:latest
+    container_name: eventhub-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: Y
+    ports:
+      - "5341:80"
+    volumes:
+      - seq-data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    container_name: eventhub-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=eventhub_db;Username=eventhub;Password=eventhub_dev_2024"
+      Jwt__Secret: "DOCKER_PRODUCTION_REPLACE_WITH_SECURE_64_CHARS_OR_MORE_aBcDeFgH"
+      Jwt__Issuer: EventHub
+      Jwt__Audience: EventHub
+      Jwt__AccessTokenExpirationMinutes: "15"
+      Jwt__RefreshTokenExpirationDays: "7"
+      QRCode__Secret: "DOCKER_PRODUCTION_REPLACE_WITH_SECURE_64_CHARS_OR_MORE_qRsTuVwX"
+      Email__Provider: Console
+      Email__FromAddress: no-reply@eventhub.local
+      Email__FromName: EventHub
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/categories >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: eventhub-frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "5173:8080"
+    environment:
+      # Common pattern: SPA runs without env vars (Vite bakes API base into
+      # the bundle at build time via VITE_API_BASE).
+      VITE_API_BASE: /api
+
+volumes:
+  postgres-data:
+  seq-data:
