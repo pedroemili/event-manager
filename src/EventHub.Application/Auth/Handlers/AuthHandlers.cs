@@ -104,27 +104,23 @@ public sealed class LoginHandler : IRequestHandler<LoginCommand, AuthResponse>
 
 public sealed class LogoutHandler : IRequestHandler<LogoutCommand>
 {
-    private readonly IUserRepository _userRepo;
+    private readonly IRefreshTokenStore _refreshTokens;
     private readonly IUnitOfWork _unitOfWork;
 
-    public LogoutHandler(IUserRepository userRepo, IUnitOfWork unitOfWork)
+    public LogoutHandler(IRefreshTokenStore refreshTokens, IUnitOfWork unitOfWork)
     {
-        _userRepo = userRepo;
+        _refreshTokens = refreshTokens;
         _unitOfWork = unitOfWork;
     }
 
     public async Task Handle(LogoutCommand request, CancellationToken cancellationToken)
     {
-        var users = await _userRepo.GetAllAsync(cancellationToken);
-        var token = users.SelectMany(u => u.RefreshTokens)
-            .FirstOrDefault(rt => rt.Token == request.RefreshToken);
+        var token = await _refreshTokens.GetByTokenAsync(request.RefreshToken, cancellationToken);
+        if (token is null) return;
 
-        if (token is not null)
-        {
-            token.IsRevoked = true;
-            token.RevokedAt = DateTime.UtcNow;
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
+        token.IsRevoked = true;
+        token.RevokedAt = DateTime.UtcNow;
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }
 

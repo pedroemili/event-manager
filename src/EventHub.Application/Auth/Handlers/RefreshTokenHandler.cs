@@ -12,33 +12,38 @@ namespace EventHub.Application.Auth.Handlers;
 public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, AuthResponse>
 {
     private readonly IJwtTokenService _jwtService;
+    private readonly IRefreshTokenStore _refreshTokens;
     private readonly IUserRepository _userRepo;
     private readonly IUnitOfWork _unitOfWork;
 
-    public RefreshTokenHandler(IJwtTokenService jwtService, IUserRepository userRepo, IUnitOfWork unitOfWork)
+    public RefreshTokenHandler(
+        IJwtTokenService jwtService,
+        IRefreshTokenStore refreshTokens,
+        IUserRepository userRepo,
+        IUnitOfWork unitOfWork)
     {
         _jwtService = jwtService;
+        _refreshTokens = refreshTokens;
         _userRepo = userRepo;
         _unitOfWork = unitOfWork;
     }
 
     public async Task<AuthResponse> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
     {
-        var allUsers = await _userRepo.GetAllAsync(cancellationToken);
-        var storedToken = allUsers
-            .SelectMany(u => u.RefreshTokens)
-            .FirstOrDefault(rt => rt.Token == request.RefreshToken);
+        var storedToken = await _refreshTokens.GetByTokenAsync(request.RefreshToken, cancellationToken);
 
-        if (storedToken is null || storedToken.IsRevoked || storedToken.ExpiresAt < DateTime.UtcNow)
+        if (storedToken is null)
+            throw new UnauthorizedException("Refresh token inválido.");
+
+        if (storedToken.IsRevoked)
         {
-            if (storedToken is not null)
-            {
-                storedToken.IsRevoked = true;
-                storedToken.RevokedAt = DateTime.UtcNow;
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-            }
-            throw new UnauthorizedException("Refresh token inválido o expirado.");
+            await RevokeDescendantTokensAsync(storedToken, request.IpAddress, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            throw new UnauthorizedException("Refresh token revocado. Posible intento de reuso detectado.");
         }
+
+        if (storedToken.ExpiresAt < DateTime.UtcNow)
+            throw new UnauthorizedException("Refresh token expirado.");
 
         var user = await _userRepo.GetByIdWithRolesAsync(storedToken.UserId, cancellationToken);
         if (user is null) throw new UnauthorizedException();
@@ -55,6 +60,7 @@ public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, A
 
         user.RefreshTokens.Add(new RefreshToken
         {
+            UserId = user.Id,
             Token = newRefreshToken,
             ExpiresAt = DateTime.UtcNow.AddDays(_jwtService.GetRefreshTokenExpirationDays()),
             CreatedByIp = request.IpAddress
@@ -63,5 +69,17 @@ public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, A
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new AuthResponse(newAccessToken, newRefreshToken, _jwtService.GetAccessTokenExpirationMinutes() * 60);
+    }
+
+    private async Task RevokeDescendantTokensAsync(RefreshToken token, string ip, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(token.ReplacedByToken)) return;
+
+        var descendant = await _refreshTokens.GetByTokenAsync(token.ReplacedByToken, ct);
+        if (descendant is null || descendant.IsRevoked) return;
+
+        descendant.IsRevoked = true;
+        descendant.RevokedAt = DateTime.UtcNow;
+        descendant.RevokedByIp = ip;
     }
 }
