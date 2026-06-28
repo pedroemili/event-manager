@@ -1,4 +1,9 @@
+using EventHub.Application.Common.Interfaces;
+using EventHub.Application.Common.Interfaces.Services;
 using EventHub.Infrastructure.Persistence;
+using EventHub.Infrastructure.Repositories;
+using EventHub.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +16,8 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
 
         services.AddDbContext<EventHubDbContext>(options =>
         {
@@ -21,6 +27,26 @@ public static class DependencyInjection
                 npgsqlOptions.EnableRetryOnFailure(3);
             });
         });
+
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IEventRepository, EventRepository>();
+        services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<ITicketRepository, TicketRepository>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<IVenueRepository, VenueRepository>();
+
+        services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+        services.Configure<QRCodeSettings>(configuration.GetSection("QRCode"));
+        services.Configure<EmailSettings>(configuration.GetSection("Email"));
+        services.AddSingleton<IJwtTokenService, JwtTokenService>();
+        services.AddSingleton<IQRCodeService, QRCodeService>();
+        services.AddScoped<IEmailService, EmailService>();
+        services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
+
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
 
         return services;
     }
