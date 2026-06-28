@@ -43,7 +43,7 @@ public static class DependencyInjection
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddSingleton<IQRCodeService, QRCodeService>();
         services.AddScoped<IEmailService, EmailService>();
-        services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
+        services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();

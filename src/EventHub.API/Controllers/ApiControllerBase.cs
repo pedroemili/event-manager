@@ -3,9 +3,10 @@ using EventHub.Application.Common.Interfaces;
 using EventHub.Shared.Responses;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
-
 namespace EventHub.API.Controllers;
 
+[ApiController]
+[Route("api/[controller]")]
 public abstract class ApiControllerBase : ControllerBase
 {
     protected ISender Mediator => HttpContext.RequestServices.GetRequiredService<ISender>();

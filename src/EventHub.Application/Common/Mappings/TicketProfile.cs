@@ -9,13 +9,24 @@ public sealed class TicketProfile : Profile
     public TicketProfile()
     {
         CreateMap<Order, OrderResponse>()
-            .ForMember(d => d.OrderItems, o => o.MapFrom(s => MapOrderItems(s.OrderItems)));
+            .ConstructUsing(src => new OrderResponse(
+                src.Id, src.OrderNumber, src.SubtotalAmount, src.DiscountAmount, src.TaxAmount,
+                src.TotalAmount, src.Currency, src.Status, src.PaymentMethod, src.PaymentStatus, src.CreatedAt,
+                MapOrderItems(src.OrderItems)))
+            .ForMember(d => d.OrderItems, o => o.Ignore());
 
         CreateMap<Ticket, TicketResponse>()
-            .ForMember(d => d.EventTitle, o => o.MapFrom(s => s.Event == null ? null : s.Event.Title))
-            .ForMember(d => d.EventStartDate, o => o.MapFrom(s => s.Event == null ? default : s.Event.StartDate))
-            .ForMember(d => d.VenueName, o => o.MapFrom(s => s.Event == null || s.Event.Venue == null ? null : s.Event.Venue.Name))
-            .ForMember(d => d.TicketTypeName, o => o.MapFrom(s => s.OrderItem == null ? null : s.OrderItem.TicketTypeName));
+            .ConstructUsing(src => new TicketResponse(
+                src.Id, src.TicketNumber, src.QrCodeData, src.QrCodeImageUrl,
+                src.Status, src.CheckedInAt,
+                src.Event == null ? null : src.Event.Title,
+                src.Event == null ? default : src.Event.StartDate,
+                src.Event == null || src.Event.Venue == null ? null : src.Event.Venue.Name,
+                src.OrderItem == null ? null : src.OrderItem.TicketTypeName))
+            .ForMember(d => d.EventTitle, o => o.Ignore())
+            .ForMember(d => d.EventStartDate, o => o.Ignore())
+            .ForMember(d => d.VenueName, o => o.Ignore())
+            .ForMember(d => d.TicketTypeName, o => o.Ignore());
     }
 
     private static IReadOnlyList<OrderItemResponse> MapOrderItems(ICollection<OrderItem> orderItems)

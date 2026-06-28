@@ -9,7 +9,11 @@ public sealed class UserProfile : Profile
     public UserProfile()
     {
         CreateMap<User, UserProfileResponse>()
-            .ForMember(d => d.Roles, o => o.MapFrom(s => ExtractRoleNames(s.UserRoles)));
+            .ConstructUsing(src => new UserProfileResponse(
+                src.Id, src.FirstName, src.LastName, src.Email, src.AvatarUrl, src.PhoneNumber,
+                src.EmailVerified,
+                ExtractRoleNames(src.UserRoles)))
+            .ForMember(d => d.Roles, o => o.Ignore());
     }
 
     private static IReadOnlyList<string> ExtractRoleNames(ICollection<UserRole> userRoles)

@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace EventHub.API.Controllers;
 
+[ApiController]
+[Route("api/[controller]")]
 public sealed class AuthController : ApiControllerBase
 {
     private readonly IConfiguration _config;
