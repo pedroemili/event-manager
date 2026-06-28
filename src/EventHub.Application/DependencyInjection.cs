@@ -19,7 +19,7 @@ public static class DependencyInjection
             cfg.RegisterServicesFromAssembly(assembly);
         });
 
-        var mapperConfig = new MapperConfiguration(cfg => cfg.AddMaps(assembly), NullLoggerFactory.Instance);
+        var mapperConfig = new MapperConfiguration(cfg => cfg.AddMaps(assembly));
         mapperConfig.AssertConfigurationIsValid();
         services.AddSingleton<IMapper>(mapperConfig.CreateMapper());
 
