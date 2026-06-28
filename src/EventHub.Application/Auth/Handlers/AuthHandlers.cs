@@ -13,14 +13,10 @@ namespace EventHub.Application.Auth.Handlers;
 public sealed class RegisterHandler : IRequestHandler<RegisterCommand>
 {
     private readonly IUserRepository _userRepo;
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly IEmailService _emailService;
 
-    public RegisterHandler(IUserRepository userRepo, IUnitOfWork unitOfWork, IEmailService emailService)
+    public RegisterHandler(IUserRepository userRepo)
     {
         _userRepo = userRepo;
-        _unitOfWork = unitOfWork;
-        _emailService = emailService;
     }
 
     public async Task Handle(RegisterCommand request, CancellationToken cancellationToken)
@@ -33,10 +29,14 @@ public sealed class RegisterHandler : IRequestHandler<RegisterCommand>
             FirstName = request.FirstName,
             LastName = request.LastName,
             Email = request.Email.ToLowerInvariant(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12)
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
+            IsActive = true
         };
 
-        user.UserRoles.Add(new UserRole { RoleId = EventHub.Domain.Entities.Users.Role.Ids.Customer });
+        user.UserRoles.Add(new UserRole
+        {
+            RoleId = EventHub.Domain.Entities.Users.Role.Ids.Customer
+        });
 
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         user.EmailVerificationTokens.Add(new EmailVerificationToken
@@ -46,9 +46,8 @@ public sealed class RegisterHandler : IRequestHandler<RegisterCommand>
         });
 
         await _userRepo.AddAsync(user, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _userRepo.SaveChangesAsync(cancellationToken);
 
-        await _emailService.SendVerificationEmailAsync(user.Email, token, cancellationToken);
     }
 }
 
@@ -56,13 +55,19 @@ public sealed class LoginHandler : IRequestHandler<LoginCommand, AuthResponse>
 {
     private readonly IUserRepository _userRepo;
     private readonly IJwtTokenService _jwtService;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly IRefreshTokenStore _refreshTokens;
+    private readonly IUnitOfWork _uow;
 
-    public LoginHandler(IUserRepository userRepo, IJwtTokenService jwtService, IUnitOfWork unitOfWork)
+    public LoginHandler(
+        IUserRepository userRepo,
+        IJwtTokenService jwtService,
+        IRefreshTokenStore refreshTokens,
+        IUnitOfWork uow)
     {
         _userRepo = userRepo;
         _jwtService = jwtService;
-        _unitOfWork = unitOfWork;
+        _refreshTokens = refreshTokens;
+        _uow = uow;
     }
 
     public async Task<AuthResponse> Handle(LoginCommand request, CancellationToken cancellationToken)
@@ -84,43 +89,43 @@ public sealed class LoginHandler : IRequestHandler<LoginCommand, AuthResponse>
 
         var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
         var accessToken = _jwtService.GenerateAccessToken(user.Id, user.Email, roles.AsReadOnly());
-        var refreshToken = _jwtService.GenerateRefreshToken();
-
-        user.RefreshTokens.Add(new RefreshToken
+        var refreshTokenValue = _jwtService.GenerateRefreshToken();
+        var refreshToken = new RefreshToken
         {
-            Token = refreshToken,
+            UserId = user.Id,
+            Token = refreshTokenValue,
             ExpiresAt = DateTime.UtcNow.AddDays(_jwtService.GetRefreshTokenExpirationDays()),
             CreatedByIp = request.IpAddress
-        });
+        };
 
-        user.LastLoginAt = DateTime.UtcNow;
-        user.FailedLoginAttempts = 0;
+        await _refreshTokens.AddAsync(refreshToken, cancellationToken);
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var tracked = await _userRepo.GetByIdAsync(user.Id, cancellationToken);
+        if (tracked is not null)
+        {
+            tracked.LastLoginAt = DateTime.UtcNow;
+            tracked.FailedLoginAttempts = 0;
+            await _uow.SaveChangesAsync(cancellationToken);
+        }
 
-        return new AuthResponse(accessToken, refreshToken, _jwtService.GetAccessTokenExpirationMinutes() * 60);
+        return new AuthResponse(accessToken, refreshTokenValue, _jwtService.GetAccessTokenExpirationMinutes() * 60);
     }
 }
 
 public sealed class LogoutHandler : IRequestHandler<LogoutCommand>
 {
     private readonly IRefreshTokenStore _refreshTokens;
-    private readonly IUnitOfWork _unitOfWork;
 
-    public LogoutHandler(IRefreshTokenStore refreshTokens, IUnitOfWork unitOfWork)
+    public LogoutHandler(IRefreshTokenStore refreshTokens)
     {
         _refreshTokens = refreshTokens;
-        _unitOfWork = unitOfWork;
     }
 
     public async Task Handle(LogoutCommand request, CancellationToken cancellationToken)
     {
         var token = await _refreshTokens.GetByTokenAsync(request.RefreshToken, cancellationToken);
         if (token is null) return;
-
-        token.IsRevoked = true;
-        token.RevokedAt = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _refreshTokens.RevokeAsync(token, cancellationToken);
     }
 }
 

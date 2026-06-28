@@ -86,4 +86,7 @@ public class Repository<T> : IRepository<T> where T : class
             query = query.Where(predicate);
         return await query.CountAsync(cancellationToken);
     }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => Context.SaveChangesAsync(cancellationToken);
 }

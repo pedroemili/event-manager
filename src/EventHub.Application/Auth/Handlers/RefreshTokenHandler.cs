@@ -3,7 +3,6 @@ using EventHub.Application.Auth.DTOs;
 using EventHub.Application.Common.Interfaces;
 using EventHub.Application.Common.Interfaces.Services;
 using EventHub.Domain.Entities.Auth;
-using EventHub.Domain.Entities.Users;
 using EventHub.Shared.Exceptions;
 using MediatR;
 
@@ -14,18 +13,15 @@ public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, A
     private readonly IJwtTokenService _jwtService;
     private readonly IRefreshTokenStore _refreshTokens;
     private readonly IUserRepository _userRepo;
-    private readonly IUnitOfWork _unitOfWork;
 
     public RefreshTokenHandler(
         IJwtTokenService jwtService,
         IRefreshTokenStore refreshTokens,
-        IUserRepository userRepo,
-        IUnitOfWork unitOfWork)
+        IUserRepository userRepo)
     {
         _jwtService = jwtService;
         _refreshTokens = refreshTokens;
         _userRepo = userRepo;
-        _unitOfWork = unitOfWork;
     }
 
     public async Task<AuthResponse> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
@@ -37,8 +33,7 @@ public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, A
 
         if (storedToken.IsRevoked)
         {
-            await RevokeDescendantTokensAsync(storedToken, request.IpAddress, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await RevokeDescendantTokensAsync(storedToken, cancellationToken);
             throw new UnauthorizedException("Refresh token revocado. Posible intento de reuso detectado.");
         }
 
@@ -48,38 +43,34 @@ public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, A
         var user = await _userRepo.GetByIdWithRolesAsync(storedToken.UserId, cancellationToken);
         if (user is null) throw new UnauthorizedException();
 
+        var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
+        var newAccessToken = _jwtService.GenerateAccessToken(user.Id, user.Email, roles.AsReadOnly());
+        var newRefreshTokenValue = _jwtService.GenerateRefreshToken();
+
         storedToken.IsRevoked = true;
         storedToken.RevokedAt = DateTime.UtcNow;
         storedToken.RevokedByIp = request.IpAddress;
+        storedToken.ReplacedByToken = newRefreshTokenValue;
+        await _refreshTokens.RevokeAsync(storedToken, cancellationToken);
 
-        var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
-        var newAccessToken = _jwtService.GenerateAccessToken(user.Id, user.Email, roles.AsReadOnly());
-        var newRefreshToken = _jwtService.GenerateRefreshToken();
-
-        storedToken.ReplacedByToken = newRefreshToken;
-
-        user.RefreshTokens.Add(new RefreshToken
+        await _refreshTokens.AddAsync(new RefreshToken
         {
             UserId = user.Id,
-            Token = newRefreshToken,
+            Token = newRefreshTokenValue,
             ExpiresAt = DateTime.UtcNow.AddDays(_jwtService.GetRefreshTokenExpirationDays()),
             CreatedByIp = request.IpAddress
-        });
+        }, cancellationToken);
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new AuthResponse(newAccessToken, newRefreshToken, _jwtService.GetAccessTokenExpirationMinutes() * 60);
+        return new AuthResponse(newAccessToken, newRefreshTokenValue, _jwtService.GetAccessTokenExpirationMinutes() * 60);
     }
 
-    private async Task RevokeDescendantTokensAsync(RefreshToken token, string ip, CancellationToken ct)
+    private async Task RevokeDescendantTokensAsync(RefreshToken token, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(token.ReplacedByToken)) return;
 
         var descendant = await _refreshTokens.GetByTokenAsync(token.ReplacedByToken, ct);
         if (descendant is null || descendant.IsRevoked) return;
 
-        descendant.IsRevoked = true;
-        descendant.RevokedAt = DateTime.UtcNow;
-        descendant.RevokedByIp = ip;
+        await _refreshTokens.RevokeAsync(descendant, ct);
     }
 }

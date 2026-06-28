@@ -43,7 +43,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(u => u.LastLoginAt);
 
         builder.HasMany(u => u.RefreshTokens)
-            .WithOne(rt => rt.User)
+            .WithOne()
             .HasForeignKey(rt => rt.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 

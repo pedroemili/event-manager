@@ -14,6 +14,4 @@ public sealed class RefreshToken
     public string CreatedByIp { get; set; } = string.Empty;
     public string? RevokedByIp { get; set; }
     public DateTime CreatedAt { get; set; } = TimeProvider.System.GetUtcNow().UtcDateTime;
-
-    public User User { get; set; } = null!;
 }
